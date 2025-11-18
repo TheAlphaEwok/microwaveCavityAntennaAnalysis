@@ -1,5 +1,4 @@
 import numpy as np
-
 import functions
 import os
 from typing import Tuple
@@ -32,6 +31,16 @@ def main():
     print(f"  Resonance Frequency (f0): {f0_res}")
     print(f"  Quality Factor (Q): {Q_factor}")
     print(f"  Maximum S21 Magnitude: {S21_max_lin}")
+    print(f"  Max Index: {i_max_idx}")
+
+    a, error_bar, error_barQ = functions.f0_Q_extraction_Lorentzian_fitting_method_errorbar(
+        file_name, f0_res, Q_factor, S21_max_lin, i_max_idx, 3000
+    )
+
+    # Print results
+    print("Fit parameters (a):", a)
+    print("Resonance frequency error bar:", error_bar)
+    print("Q factor error bar:", error_barQ)
 
 if __name__ == "__main__":
     main()
