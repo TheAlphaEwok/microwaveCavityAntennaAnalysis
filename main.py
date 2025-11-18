@@ -1,59 +1,37 @@
-import pandas as pd
-import numpy as np          # for data handling
-import matplotlib.pyplot as plt   # for plotting
+import numpy as np
 
-filePath = r'C:\Users\Pengu\OneDrive\Documents\S21FarApart.csv'
+import functions
+import os
+from typing import Tuple
 
-try:
-    df = pd.read_csv(filePath)
-except FileNotFoundError:
-    print(f"Error: The file '{filePath}' was not found. Please check the file path.")
-    # Exit or handle the error appropriately
-    exit()
+def main():
 
-print("Data successfully loaded:")
+    # Takes file input from anywhere on pc given a full file path using os library 
+    file_name = input("Please enter the name or path of the CSV data file (e.g., mydata.csv): ")
+    
+    # Check if file/path exists
+    if not os.path.exists(file_name):
+        print(f"ERROR: File not found at path: {file_name}")
+        return
+    
+    print(f"--- Calling function with file: {file_name} ---")
 
-dfClean = df.dropna().reset_index(drop=True)
-# Find resonant peak
-f0 = 8e9
-S21_at_f0 = np.interp(f0, dfClean['Frequency'], dfClean['Mag'])
-half_power = S21_at_f0 + 3
+    # --- Call the function ---
+    # Since we used 'import functions', we access the function using dot notation:
+    try:
+        f0_res, Q_factor, S21_max_lin, i_max_idx = functions.f0_Q_extraction_3dBmethod_csv(file_name)
+    except AttributeError:
+        # Fallback if the function name used is the original one
+        f0_res, Q_factor, S21_max_lin, i_max_idx = functions.f0_Q_extraction_3dBmethod_csv(file_name)
+    except Exception as e:
+        print(f"An error occurred during function execution: {e}")
+        return
 
+    # --- Print Results ---
+    print(f"✅ Analysis Complete:")
+    print(f"  Resonance Frequency (f0): {f0_res}")
+    print(f"  Quality Factor (Q): {Q_factor}")
+    print(f"  Maximum S21 Magnitude: {S21_max_lin}")
 
-# Function to interpolate the -3 dB crossing
-def interpolate(f1, f2, y1, y2, target):
-    return f1 + (target - y1) * (f2 - f1) / (y2 - y1)
-
-# Left -3 dB point
-left_data = dfClean[dfClean['Frequency'] < f0]
-for i in range(len(left_data)-1, 0, -1):
-    if left_data['Mag'].iloc[i-1] < half_power <= left_data['Mag'].iloc[i]:
-        f1 = interpolate(left_data['Frequency'].iloc[i-1],
-                         left_data['Frequency'].iloc[i],
-                         left_data['Mag'].iloc[i-1],
-                         left_data['Mag'].iloc[i],
-                         half_power)
-        break
-
-# Right -3 dB point
-right_data = dfClean[dfClean['Frequency'] > f0]
-for i in range(len(right_data)-1):
-    if right_data['Mag'].iloc[i] >= half_power > right_data['Mag'].iloc[i+1]:
-        f2 = interpolate(right_data['Frequency'].iloc[i],
-                         right_data['Frequency'].iloc[i+1],
-                         right_data['Mag'].iloc[i],
-                         right_data['Mag'].iloc[i+1],
-                         half_power)
-        break
-
-# Compute Q
-bandwidth = f2 - f1
-Q = f0 / bandwidth
-
-# Convert to GHz
-f0G = f0/(1e9)
-bandwidthG = bandwidth/(1e9)
-
-print(f"Resonant frequency f0 = {f0G:.2f} GHz")
-print(f"Bandwidth Δf = {bandwidthG:.2f} GHz")
-print(f"Q factor = {Q:.2f}")
+if __name__ == "__main__":
+    main()
