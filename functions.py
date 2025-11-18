@@ -8,9 +8,9 @@ from scipy.optimize import least_squares
 
 def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, int]:
     """
-    Calculates the resonance frequency (f0), quality factor (Q), and maximum 
-    magnitude of the S21 parameter (S21_max) using the 3dB method from a 
-    **CSV (Comma-Separated Values) data file**.
+    Calculates the resonance frequency (f0), quality factor (Q), maximum 
+    magnitude of the S21 parameter (S21_max), and finds the index of S21_max
+    using the 3dB method from a CSV data file
 
     The input file is expected to have three columns:
     1. Frequency (Freq_Raw)
@@ -18,40 +18,31 @@ def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, 
     3. Phase in degrees (Phase_Raw_deg)
 
     Args:
-        file_name: The path/name of the CSV data file.
+        file_name: The full path of the CSV data file
 
     Returns:
         A tuple containing:
         - f0: Resonance frequency.
         - Q: Quality factor.
         - S21_max_linear: Maximum S21 magnitude in linear scale.
-        - i_max: Index of the maximum S21 magnitude (0-based).
+        - i_max: Index of the maximum S21 magnitude.
     """
     
-    # ************Read Input File (CSV)******** try:
-        # Key Change: Use the 'delimiter' argument to specify a comma
-    # The 'try' keyword must precede the block you are attempting to execute
+    # Load the data from the CSV
     try:
-        # Load the data, assuming it's a CSV with a comma delimiter
         Data_df = pd.read_csv(
             file_name, 
             skiprows=3, 
             header=None, 
             delimiter=',', 
-            comment='#', # <--- ADD THIS
-            decimal='.'  # Keep this for robustness against regional decimal formats
+            comment='#',
+            decimal='.'
         )
-    # The 'except' block handles errors from the 'try' block
     except Exception as e:
         print(f"Error loading CSV file {file_name}: {e}")
         return 0.0, 0.0, 0.0, 0
-    
 
-    
-    # Execution continues here if loading succeeds (Data is defined)
-    # ... rest of the function logic ...
-
-    # Specify columns (same as before)
+    # Specify columns from CSV
     Freq_Raw = Data_df.iloc[:, 0]
     Mag_Raw_dB = Data_df.iloc[:, 1]
     Phase_Raw_deg = Data_df.iloc[:, 2]
@@ -65,11 +56,7 @@ def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, 
     MagS21_Circle = Mag_Raw_linear
     Freq = Freq_Raw
 
-    # Unused but calculated for completeness
-    ReS21_Circle = Mag_Raw_linear * np.cos(Phase_Raw_rad)
-    ImS21_Circle = Mag_Raw_linear * np.sin(Phase_Raw_rad)
-
-    # *** Find S21_max and f0 (Resonance Point) ***
+    # Finds S21 max and resonant frequency
     i_max = np.argmax(MagS21_Circle)
     S21_max_linear = MagS21_Circle[i_max]
     f0 = Freq[i_max]
@@ -77,7 +64,7 @@ def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, 
     # 3dB threshold in linear scale
     threshold_3dB = S21_max_linear / math.sqrt(2)
     
-    # *** Find 3dB Bandwidth (DeltaF) ***
+    # Finds the 3dB bandwidth
     
     # 1. Find i_left3dB (the lower frequency boundary)
     i_left3dB = 0 
@@ -93,7 +80,7 @@ def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, 
             i_right3dB = i
             break
 
-    # Calculate bandwidth DeltaF
+    # Calculate the bandwidth DeltaF
     if i_right3dB > i_left3dB:
         DeltaF = Freq[i_right3dB] - Freq[i_left3dB] 
         Q = f0 / DeltaF
@@ -104,59 +91,98 @@ def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, 
 
     return f0, Q, S21_max_linear, i_max
 
-def f0_Q_extraction_Lorentzian_fitting_method_errorbar(
-        file_name, f03dB, Q3dB, S21_max, i_max, interval):
+def f0_Q_extraction_Lorentzian_fitting_method_errorbar_dB(
+        file_name, f03dB, Q3dB, S21_max, i_max):
     """
-    Lorentzian fitting with error bar estimation using pandas for CSV input.
+    Finds a Lorentzian fitting function with error bar estimation based on 
+    data from 3dB method
     
+    Args:
+        file_name: The full path of the CSV data file
+        f03dB: The resonant frequency found from 3dB method
+        Q3dB: The quality factor found from 3dB method
+        S21_max: The maximum magnitude found from 3dB method
+        i_max: The index of S21)max
+
     Returns:
         a: fit parameters
         error_bar: error bar for f0
         error_barQ: error bar for Q
     """
-    # Load CSV with pandas (assumes columns: freq, S21, Phase21)
-    df = pd.read_csv(file_name)
+    
+    # Calculate an interval for fitting functionn based on data set
+    DeltaF = f03dB / Q3dB  # 3 dB bandwidth in same units as f0
+    Freq = pd.read_csv(file_name, skiprows=3, header=None, delimiter=',', comment='#', decimal='.').iloc[:, 0].values
+    freq_step = np.mean(np.diff(np.unique(Freq)))
+    interval = max(int(10 * DeltaF / freq_step), 1)
+
+    # Load and group data to find averages for better graph
+    df = pd.read_csv(       
+            file_name, 
+            skiprows=3, 
+            header=None, 
+            delimiter=',', 
+            comment='#',
+            decimal='.'
+            )
     df_grouped = df.groupby(df.iloc[:,0]).agg({
-        df.columns[1]: 'mean',   # average S21
+        df.columns[1]: 'mean',   # average S21 in dB
         df.columns[2]: 'mean'    # average Phase
     }).reset_index()
+    i_max = np.argmax(df_grouped.iloc[:,1].values)
 
     # Extract arrays
     Freq_Raw = df_grouped.iloc[:,0].values
-    Mag_Raw = 10**(df_grouped.iloc[:,1].values / 20)  # convert dB to linear
+    Mag_Raw_dB = df_grouped.iloc[:,1].values
     Phase_Raw = df_grouped.iloc[:,2].values
 
     start_i = max(i_max - interval//2, 0)
     end_i = min(i_max + interval//2, len(Freq_Raw)-1)
     
-    MagS21_Circle = Mag_Raw[start_i:end_i+1]*1e3
-    ReS21_Circle = Mag_Raw[start_i:end_i+1]*np.cos(np.deg2rad(Phase_Raw[start_i:end_i+1]))
-    ImS21_Circle = Mag_Raw[start_i:end_i+1]*np.sin(np.deg2rad(Phase_Raw[start_i:end_i+1]))
-    Freq = Freq_Raw[start_i:end_i+1]/1e9
+    # Array for fitting
+    MagS21_dB = Mag_Raw_dB[start_i:end_i+1]
+    Freq = Freq_Raw[start_i:end_i+1]/1e9 # Freq in GHz
     
-    # Lorentzian fit function
-    def lorentz(a, F):
-        return a[0] + a[1]*F + (a[2]+a[5]*F)/np.sqrt(1 + 4*((F-a[3])/a[4])**2)
-    
-    a0 = [0, 0, S21_max*1e3, f03dB/1e9, f03dB/(Q3dB*1e9), 0]
+    # Calculation of Lorentzian fitting function
+    def lorentz_dB(a, F):
+        # a[0]: Baseline (dB)
+        # a[1]: Coupling coefficient or linear background (for phase/cable effects)
+        # a[2]: Peak height (dB)
+        # a[3]: Resonance Frequency f0 (GHz)
+        # a[4]: Half-width at 3dB (Delta F) (GHz)
+        # a[5]: Asymmetry/Fano parameter (for non-symmetric features)
+        
+        # Baseline + peak on a log scale
+        # The peak is the power magnitude: |1 - coupling_term|^2
+        return a[0] + a[1]*F + 10 * np.log10(
+            (10**(a[2]/10)) / (1 + 4 * ((F - a[3]) / a[4])**2)
+        )
+
+    # a0 = [baseline, linear_slope, peak_height_dB, f0, DeltaF, asymmetry]
+    a0 = [-60, 0, S21_max, f03dB/1e9, f03dB/(Q3dB*1e9), 0]
     
     def residuals(a, F, y):
-        return lorentz(a, F) - y
+        return lorentz_dB(a, F) - y
     
-    result = least_squares(residuals, a0, args=(Freq, MagS21_Circle))
+    # Fit the data using least squares
+    result = least_squares(residuals, a0, args=(Freq, MagS21_dB))
     a = result.x
     resnorm = np.sum(result.fun**2)
     
-    # Plot fit
+    # Plotting the data and fitting function
     times = np.linspace(Freq[0], Freq[-1], 500)
-    plt.plot(Freq, MagS21_Circle, 'k*')
-    plt.plot(times, lorentz(a, times), 'b-', linewidth=2)
+    plt.plot(Freq, MagS21_dB, 'b*')
+    plt.plot(times, lorentz_dB(a, times), 'r-', linewidth=1)
     plt.legend(['Data','Lorentzian fit'])
     plt.xlabel('Freq (GHz)')
-    plt.ylabel('S21 (lin)*1e3')
-    plt.title(file_name)
+    plt.ylabel('S21 (dB)')
+    plt.title(file_name + ' (dB Fit)')
     plt.show()
     
+    # -------- Error bar estimation for f0 and Q --------
+    # The calculations for f0 and Q error bars use the same loop logic by 
+    # finding where the residual sum increases by 3%
+
     # -------- Error bar estimation for f0 --------
     prevf0 = a[3]
     stepf0 = a[3]*0.01
@@ -166,7 +192,7 @@ def f0_Q_extraction_Lorentzian_fitting_method_errorbar(
     n_max = 700
     
     while abs(vvariance) > resnorm*1e-4 and n < n_max:
-        ddeviation = (lorentz([*a[:3], nextf0, *a[4:]], Freq) - MagS21_Circle)**2
+        ddeviation = (lorentz_dB([*a[:3], nextf0, *a[4:]], Freq) - MagS21_dB)**2
         NEWvvariance = np.sum(ddeviation) - 1.03*resnorm
         if abs(vvariance) > abs(NEWvvariance) and vvariance*NEWvvariance > 0:
             nextf0 += stepf0
@@ -188,7 +214,7 @@ def f0_Q_extraction_Lorentzian_fitting_method_errorbar(
     n = 0
     
     while abs(vvariance) > resnorm*1e-6 and n < n_max:
-        ddeviation = (lorentz([*a[:3], a[3], nextDF, a[5]], Freq) - MagS21_Circle)**2
+        ddeviation = (lorentz_dB([*a[:3], a[3], nextDF, a[5]], Freq) - MagS21_dB)**2
         NEWvvariance = np.sum(ddeviation) - 1.03*resnorm
         if abs(vvariance) > abs(NEWvvariance) and vvariance*NEWvvariance > 0:
             nextDF += stepDF

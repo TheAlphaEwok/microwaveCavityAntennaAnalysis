@@ -15,29 +15,21 @@ def main():
     
     print(f"--- Calling function with file: {file_name} ---")
 
-    # --- Call the function ---
-    # Since we used 'import functions', we access the function using dot notation:
+    # Call the 3dB function from functions file
     try:
-        f0_res, Q_factor, S21_max_lin, i_max_idx = functions.f0_Q_extraction_3dBmethod_csv(file_name)
-    except AttributeError:
-        # Fallback if the function name used is the original one
         f0_res, Q_factor, S21_max_lin, i_max_idx = functions.f0_Q_extraction_3dBmethod_csv(file_name)
     except Exception as e:
         print(f"An error occurred during function execution: {e}")
         return
 
-    # --- Print Results ---
-    print(f"✅ Analysis Complete:")
-    print(f"  Resonance Frequency (f0): {f0_res}")
-    print(f"  Quality Factor (Q): {Q_factor}")
-    print(f"  Maximum S21 Magnitude: {S21_max_lin}")
-    print(f"  Max Index: {i_max_idx}")
+    # Prints 3dB Results
+    print(f"Results: f0={f0_res}, Q={Q_factor}, Max S21 Mag={S21_max_lin}, Max Index={i_max_idx}")
 
-    a, error_bar, error_barQ = functions.f0_Q_extraction_Lorentzian_fitting_method_errorbar(
-        file_name, f0_res, Q_factor, S21_max_lin, i_max_idx, 3000
+    a, error_bar, error_barQ = functions.f0_Q_extraction_Lorentzian_fitting_method_errorbar_dB(
+        file_name, f0_res, Q_factor, S21_max_lin, i_max_idx
     )
 
-    # Print results
+    # Prints Lorentzian Fit Results
     print("Fit parameters (a):", a)
     print("Resonance frequency error bar:", error_bar)
     print("Q factor error bar:", error_barQ)
