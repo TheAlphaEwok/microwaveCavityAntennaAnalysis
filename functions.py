@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from typing import Tuple
 from scipy.optimize import least_squares
 
-def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, int]:
+def f0_Q_extraction_3dBmethod_csv(file_name: str, row_skip, rows) -> Tuple[float, float, float, int]:
     """
     Calculates the resonance frequency (f0), quality factor (Q), maximum 
     magnitude of the S21 parameter (S21_max), and finds the index of S21_max
@@ -32,7 +32,8 @@ def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, 
     try:
         Data_df = pd.read_csv(
             file_name, 
-            skiprows=3, 
+            skiprows=row_skip, 
+            nrows=rows,
             header=None, 
             delimiter=',', 
             comment='#',
@@ -43,22 +44,16 @@ def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, 
         return 0.0, 0.0, 0.0, 0
 
     # Specify columns from CSV
-    Freq_Raw = Data_df.iloc[:, 0]
+    Freq = Data_df.iloc[:, 0]
     Mag_Raw_dB = Data_df.iloc[:, 1]
     Phase_Raw_deg = Data_df.iloc[:, 2]
 
     # Convert magnitude from dB to linear scale (Mag = 10^(Mag_dB / 20))
-    Mag_Raw_linear = 10**(Mag_Raw_dB / 20)
-    
-    # Convert phase from degrees to radians for trigonometric functions
-    Phase_Raw_rad = Phase_Raw_deg * (math.pi / 180.0)
-
-    MagS21_Circle = Mag_Raw_linear
-    Freq = Freq_Raw
+    MagS21_linear = 10**(Mag_Raw_dB / 20)
 
     # Finds S21 max and resonant frequency
-    i_max = np.argmax(MagS21_Circle)
-    S21_max_linear = MagS21_Circle[i_max]
+    i_max = np.argmax(MagS21_linear)
+    S21_max_linear = MagS21_linear[i_max]
     f0 = Freq[i_max]
     
     # 3dB threshold in linear scale
@@ -68,15 +63,15 @@ def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, 
     
     # 1. Find i_left3dB (the lower frequency boundary)
     i_left3dB = 0 
-    for i in range(len(MagS21_Circle)):
-        if MagS21_Circle[i] > threshold_3dB:
+    for i in range(len(MagS21_linear)):
+        if MagS21_linear[i] > threshold_3dB:
             i_left3dB = i
             break
     
     # 2. Find i_right3dB (the higher frequency boundary)
-    i_right3dB = len(MagS21_Circle) - 1 
-    for i in range(len(MagS21_Circle) - 1, -1, -1):
-        if MagS21_Circle[i] > threshold_3dB:
+    i_right3dB = len(MagS21_linear) - 1 
+    for i in range(len(MagS21_linear) - 1, -1, -1):
+        if MagS21_linear[i] > threshold_3dB:
             i_right3dB = i
             break
 
@@ -92,7 +87,7 @@ def f0_Q_extraction_3dBmethod_csv(file_name: str) -> Tuple[float, float, float, 
     return f0, Q, S21_max_linear, i_max
 
 def f0_Q_extraction_Lorentzian_fitting_method_errorbar_dB(
-        file_name, f03dB, Q3dB, S21_max, i_max):
+        file_name, f03dB, Q3dB, S21_max, i_max, row_skip, rows):
     """
     Finds a Lorentzian fitting function with error bar estimation based on 
     data from 3dB method
@@ -112,14 +107,15 @@ def f0_Q_extraction_Lorentzian_fitting_method_errorbar_dB(
     
     # Calculate an interval for fitting functionn based on data set
     DeltaF = f03dB / Q3dB  # 3 dB bandwidth in same units as f0
-    Freq = pd.read_csv(file_name, skiprows=3, header=None, delimiter=',', comment='#', decimal='.').iloc[:, 0].values
+    Freq = pd.read_csv(file_name, skiprows=row_skip, nrows=rows, header=None, delimiter=',', comment='#', decimal='.').iloc[:, 0].values
     freq_step = np.mean(np.diff(np.unique(Freq)))
     interval = max(int(10 * DeltaF / freq_step), 1)
 
     # Load and group data to find averages for better graph
     df = pd.read_csv(       
             file_name, 
-            skiprows=3, 
+            skiprows=row_skip, 
+            nrows=rows,
             header=None, 
             delimiter=',', 
             comment='#',
@@ -159,19 +155,22 @@ def f0_Q_extraction_Lorentzian_fitting_method_errorbar_dB(
         )
 
     # a0 = [baseline, linear_slope, peak_height_dB, f0, DeltaF, asymmetry]
-    a0 = [-60, 0, S21_max, f03dB/1e9, f03dB/(Q3dB*1e9), 0]
+    a0 = [0, 0, S21_max*1e3, f03dB/1e9, f03dB/(Q3dB*1e9), 0]
+
+    lower_bounds = [-np.inf, -np.inf, -np.inf, Freq.min(), 1e-12, -np.inf]
+    upper_bounds = [np.inf, np.inf, np.inf, Freq.max(), np.inf, np.inf]
     
     def residuals(a, F, y):
         return lorentz_dB(a, F) - y
     
     # Fit the data using least squares
-    result = least_squares(residuals, a0, args=(Freq, MagS21_dB))
+    result = least_squares(residuals, a0, args=(Freq, MagS21_dB), bounds=(lower_bounds, upper_bounds))
     a = result.x
     resnorm = np.sum(result.fun**2)
     
     # Plotting the data and fitting function
     times = np.linspace(Freq[0], Freq[-1], 500)
-    plt.plot(Freq, MagS21_dB, 'b*')
+    plt.plot(Freq, MagS21_dB, 'b-', linewidth=2)
     plt.plot(times, lorentz_dB(a, times), 'r-', linewidth=1)
     plt.legend(['Data','Lorentzian fit'])
     plt.xlabel('Freq (GHz)')
